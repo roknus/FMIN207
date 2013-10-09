@@ -1,168 +1,184 @@
-breed [ rabbitsM rabbitM ]
-breed [ rabbitsF rabbitF ]
-breed [ wolfs wolf ]
-patches-own 
-[ 
-  smellM
-  smellF
-  max-smell   
-]
+breed [ hunters hunter ]
+breed [ animals animal ]
+globals [ village-energy ]
+hunters-own [ gatherer? ctask energy]
 
 to setup
   clear-all
+  reset-ticks
+  resize-world -75 75 -75 75
+  set-patch-size 5
+  
+  set village-energy starting-village-energy
+  
   ask patches
   [
-   set smellM 0
-   set smellF 0
-   set max-smell 50
+   ifelse ( pxcor >= -10 and pxcor <= 10 and pycor >= -10 and pycor <= 10 )
+   [
+    set pcolor brown 
+   ]
+   [
+    if ( pxcor >= 50 and pycor >= 50)
+    [
+      set pcolor green 
+    ] 
+   ]
   ]
-  
-  set-default-shape rabbitsM "bug"
-  create-rabbitsM rabbits-number
-  [
-    set color blue
-    setxy random-xcor random-ycor
-  ]
-  
-  set-default-shape rabbitsF "bug"
-  create-rabbitsF rabbits-number
-  [
-    set color pink
-    setxy random-xcor random-ycor
-  ]
-  
-  set-default-shape wolfs "wolf"
-  create-wolfs wolfs-number
-  [
-    set color grey
-    setxy random-xcor random-ycor
-  ]
-  reset-ticks
+   
+   set-default-shape hunters "person"
+   create-hunters hunters-number
+   [
+     set energy 1000
+     set size 2
+     set xcor random -10
+     set xcor xcor + random 10
+     set ycor random -10
+     set ycor ycor + random 10
+     ifelse random 100 < gatherer-rate
+     [
+       set ctask "hunt"
+       set color pink
+     ]
+     [
+       set ctask "gather"
+       set color blue
+     ]
+   ]
+   
+   set-default-shape animals "sheep"
+   create-animals animals-number
+   [
+    set color white
+    set size 2 
+    set xcor random world-width
+    set ycor random world-height 
+   ]
 end
 
 to go
-  smell-diffusal
-  move-rabbitsM
-  move-rabbitsF
-  move-wolfs
-  ask patches 
+  ask animals
   [
-    if smellM < 0.1 [ set smellM 0 ]
-    if smellF < 0.1 [ set smellF 0 ]
-    set smellM (smellM - (smellM * evaporation-rate / 100))
-    set smellF (smellF - (smellF * evaporation-rate / 100))
-    set pcolor scale-color yellow (smellF + smellM) 1 (max-smell * 2 / 1.3) 
-  ] 
-end
-
-to smell-diffusal
-  diffuse smellM 0.40
-  diffuse smellF 0.40
-end
-
-to move-rabbitsM
-  ask rabbitsM
+    move-animals
+    reproduce-animals
+  ]
+  ask hunters
   [
-    let w one-of wolfs in-radius radius-detection-rabbits
-    ifelse w != nobody
+    set energy ( energy - 1 )
+    if pcolor = brown
     [
-      rt random 50
-      lt random 50
-      fd 5
-    ]
-    [
-      if smellM < max-smell
+      let missing-energy (1000 - energy)
+      if village-energy - missing-energy > 0
       [
-        set smellM smellM + 1 
-      ]
-      let p max-one-of neighbors [smellF]  
-      ifelse [smellF] of p > smellF
-      [ ; Si l'odeur du patch voisin est plus importante
-        ifelse one-of rabbitsF in-radius 2 != nobody and one-of rabbitsM in-radius 2 != nobody
-        [
-          set heading towards p
-        ]
-        [
-          rt random 360
-          fd 2
-        ]
-      ]
-      [ ; Sinon on bouge aleatoirement
-        rt random 50
-        lt random 50
+        set village-energy village-energy - missing-energy
+        set energy energy + missing-energy
       ]
     ]
-    fd 1
+    reproduce-hunters
+    run ctask 
+    if energy = 0 [ die ]
+  ]
+  tick
+end
+
+to move-animals
+  rt random 180
+  lt random 180
+  fd 0.2
+end
+
+to reproduce-animals
+  if (random 1000 < animals-birth-rate) and ((count animals) < max-animals)
+  [
+   hatch-animals 1
+   [
+    set color white
+    setxy xcor ycor 
+   ] 
   ]
 end
 
-to move-rabbitsF
-  ask rabbitsF
-  [  
-    let w one-of wolfs in-radius radius-detection-rabbits
-    ifelse w != nobody
-    [
-      rt random 50
-      lt random 50
-      fd 5
-    ]
-    [
-      if smellF < max-smell
-      [
-        set smellF smellF + 1 
-      ]
-      
-      let p max-one-of neighbors [smellM]  
-      ifelse [smellM] of p > smellM 
-      [ ; Si l'odeur du patch voisin est plus importante
-        ifelse one-of rabbitsF in-radius 2 != nobody and one-of rabbitsM in-radius 2 != nobody
-        [
-          set heading towards p
-        ]
-        [
-          rt random 360
-          fd 2
-        ]
-      ]
-      [ ; Sinon on bouge aleatoirement
-        rt random 50
-        lt random 50
-      ]
-    ]
-    fd 1
+to hunt
+  let prey one-of other animals-here
+  ifelse prey != nobody
+  [
+    ask prey [ die ]
+    set color red
+    set ctask "back-from-hunt"
   ]
-end
-
-to move-wolfs
-  ask wolfs
-  [     
-    let pM max-one-of neighbors [smellM]  
-    let pF max-one-of neighbors [smellF]  
-    ifelse [smellM] of pM > smellM or [smellF] of pF > smellF [ ; Si l'odeur du patch voisin est plus importante
-      ifelse [smellM] of pM > smellM
-      [
-        set heading towards pM
-      ]
-      [
-        set heading towards pF
-      ]
+  [
+    set prey one-of animals in-radius 5
+    ifelse prey != nobody
+    [
+      set heading towards prey
     ]
-    [ ; Sinon on bouge aleatoirement
+    [
       rt random 180
       lt random 180
     ]
-    fd 0.8
+    fd 1
+  ]
+end
+
+to back-from-hunt
+  ifelse pcolor = brown
+  [
+    set village-energy village-energy + hunt-energy
+    set color pink
+    set ctask "hunt"
+  ]
+  [
+    set heading towardsxy 0 0 
+    fd 1
+  ]
+end
+
+to gather
+  ifelse pcolor = green  
+  [
+    set color violet
+    set ctask "back-from-gathering" 
+  ]
+  [
+    set heading towardsxy random 1000 random 1000
+    fd 1
+  ]
+end
+
+to back-from-gathering
+  ifelse pcolor = brown
+  [
+    set village-energy village-energy + gathering-energy
+    set color blue
+    set ctask "gather"
+  ]
+  [
+    set heading towardsxy 0 0 
+    fd 1
+  ]
+end
+
+to reproduce-hunters
+  if (random 1000 < hunters-birth-rate) and ((count hunters) < max-hunters) and energy > 50
+  [
+    set energy energy / 2
+    hatch-hunters 1
+    [
+      set energy energy
+      set color color
+      setxy xcor ycor
+      set ctask "hunt"
+    ] 
   ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-250
-16
-1023
-810
-16
-16
-23.12121212121212
+210
+10
+975
+796
+75
+75
+5.0
 1
 10
 1
@@ -172,10 +188,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--16
-16
--16
-16
+-75
+75
+-75
+75
 0
 0
 1
@@ -183,27 +199,10 @@ ticks
 30.0
 
 BUTTON
-124
-17
-229
-60
-Go
-go
-T
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-11
-16
-106
-60
+2
+15
+97
+55
 Setup
 setup
 NIL
@@ -216,13 +215,135 @@ NIL
 NIL
 1
 
+BUTTON
+102
+16
+201
+54
+Go
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
 SLIDER
-14
-71
-229
-104
-diffusal-rate
-diffusal-rate
+5
+64
+200
+97
+hunters-number
+hunters-number
+0
+500
+106
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+6
+103
+200
+136
+animals-number
+animals-number
+0
+500
+117
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+6
+141
+199
+174
+animals-birth-rate
+animals-birth-rate
+0
+1
+0.1
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+6
+178
+200
+211
+max-animals
+max-animals
+0
+1000
+1000
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+7
+250
+200
+283
+hunt-energy
+hunt-energy
+0
+100
+60
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+8
+287
+200
+320
+gathering-energy
+gathering-energy
+0
+100
+20
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+-2
+463
+215
+496
+starting-village-energy
+starting-village-energy
+0
+10000
+100
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+8
+353
+198
+386
+gatherer-rate
+gatherer-rate
 0
 100
 50
@@ -231,65 +352,68 @@ diffusal-rate
 NIL
 HORIZONTAL
 
-SLIDER
-16
-120
-228
-153
-rabbits-number
-rabbits-number
-0
-100
-15
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
+MONITOR
+1099
+35
+1164
+80
+Animals
+count animals
 17
-166
-230
-199
-wolfs-number
-wolfs-number
-0
-100
-5
 1
+11
+
+SLIDER
+7
+390
+193
+423
+hunters-birth-rate
+hunters-birth-rate
+0
+1
+1
+0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
+7
+424
+194
+457
+max-hunters
+max-hunters
+0
+1000
+1000
+1
+1
+NIL
+HORIZONTAL
+
+MONITOR
+1012
+33
+1077
+78
+Hunters
+count hunters
 17
-209
-229
-242
-evaporation-rate
-evaporation-rate
-0
-5
-3
-0.5
 1
-NIL
-HORIZONTAL
+11
 
-SLIDER
-18
-254
-228
-287
-radius-detection-rabbits
-radius-detection-rabbits
-0
-10
-5
+MONITOR
+1014
+91
+1165
+136
+Village-energy
+village-energy
+17
 1
-1
-NIL
-HORIZONTAL
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -522,19 +646,12 @@ Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
 
 sheep
 false
-15
-Circle -1 true true 203 65 88
-Circle -1 true true 70 65 162
-Circle -1 true true 150 105 120
-Polygon -7500403 true false 218 120 240 165 255 165 278 120
-Circle -7500403 true false 214 72 67
-Rectangle -1 true true 164 223 179 298
-Polygon -1 true true 45 285 30 285 30 240 15 195 45 210
-Circle -1 true true 3 83 150
-Rectangle -1 true true 65 221 80 296
-Polygon -1 true true 195 285 210 285 210 240 240 210 195 210
-Polygon -7500403 true false 276 85 285 105 302 99 294 83
-Polygon -7500403 true false 219 85 210 105 193 99 201 83
+0
+Rectangle -7500403 true true 151 225 180 285
+Rectangle -7500403 true true 47 225 75 285
+Rectangle -7500403 true true 15 75 210 225
+Circle -7500403 true true 135 75 150
+Circle -16777216 true false 165 76 116
 
 square
 false
@@ -623,9 +740,11 @@ Line -7500403 true 84 40 221 269
 wolf
 false
 0
-Polygon -16777216 true false 253 133 245 131 245 133
-Polygon -7500403 true true 2 194 13 197 30 191 38 193 38 205 20 226 20 257 27 265 38 266 40 260 31 253 31 230 60 206 68 198 75 209 66 228 65 243 82 261 84 268 100 267 103 261 77 239 79 231 100 207 98 196 119 201 143 202 160 195 166 210 172 213 173 238 167 251 160 248 154 265 169 264 178 247 186 240 198 260 200 271 217 271 219 262 207 258 195 230 192 198 210 184 227 164 242 144 259 145 284 151 277 141 293 140 299 134 297 127 273 119 270 105
-Polygon -7500403 true true -1 195 14 180 36 166 40 153 53 140 82 131 134 133 159 126 188 115 227 108 236 102 238 98 268 86 269 92 281 87 269 103 269 113
+Polygon -7500403 true true 135 285 195 285 270 90 30 90 105 285
+Polygon -7500403 true true 270 90 225 15 180 90
+Polygon -7500403 true true 30 90 75 15 120 90
+Circle -1 true false 183 138 24
+Circle -1 true false 93 138 24
 
 x
 false
