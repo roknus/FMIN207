@@ -1,220 +1,226 @@
-breed [ hunters hunter ]
-breed [ animals animal ]
-globals [ village-energy hunt-total-energy gathering-total-energy ]
-hunters-own [ ctask energy ]
+patches-own [grass-heigth grow]
+breed [ cows cow ]
+cows-own [ energy ctask enfant? fear-time lifetime]
+breed [ wolfs wolf ]
+wolfs-own [ energy ctask ]
 
 to setup
   clear-all
-  reset-ticks
   resize-world -75 75 -75 75
-  set-patch-size 5
-  
-  set village-energy starting-village-energy
-  set hunt-total-energy 0
-  set gathering-total-energy 0
-  
-  ask patches
+  set-patch-size 10
+  ask patches 
   [
-   ifelse ( pxcor >= -10 and pxcor <= 10 and pycor >= -10 and pycor <= 10 )
-   [
-    set pcolor brown 
-   ]
-   [
-    if ( pxcor >= 50 and pycor >= 50)
+    set grass-heigth 0 
+    set grow 0  
+  ]
+  set-default-shape cows "cow"
+  set-default-shape wolfs "wolf"
+  create-cows cows-number
+  [
+    set lifetime 100
+    set fear-time 0
+    set enfant? false
+    set ctask "gather"
+    set energy random 1000
+    set energy energy + 50
+    set color white
+    set size 2
+    setxy random-xcor random-ycor 
+  ]
+  create-wolfs wolfs-number
+  [
+    set ctask "hunt"
+    set energy 100
+    set color red
+    set size 2
+    setxy random-xcor random-ycor     
+  ]
+  
+  reset-ticks
+end
+
+to wolfs-action
+  ask wolfs
+  [
+    if random-float 1000 < random-birth-wolfs and energy > 50 ;and count wolfs < 50
     [
-      set pcolor green 
-    ] 
-   ]
-  ]
-   
-   set-default-shape hunters "person"
-   create-hunters hunters-number
-   [
-     set energy 100
-     set size 2
-     set xcor random -10
-     set xcor xcor + random 10
-     set ycor random -10
-     set ycor ycor + random 10
-     ifelse random 100 < gatherer-rate
-     [
-       set ctask "hunt"
-       set color pink
-     ]
-     [
-       set ctask "gather"
-       set color blue
-     ]
-   ]
-   
-   set-default-shape animals "sheep"
-   create-animals animals-number
-   [
-    set color white
-    set size 2 
-    set xcor random world-width
-    set ycor random world-height 
-   ]
-end
-
-to go
-  ask animals
-  [
-    move-animals
-    reproduce-animals
-  ]
-  ask hunters
-  [
-    set energy energy - 0.1
-    get-energy-from-village
-    reproduce-hunters
-    run ctask 
-    change-work
-    if energy <= 0 [ die ]
-  ]
-  tick
-end
-
-to move-animals
-  rt random 50
-  lt random 50
-  fd 0.2
-end
-
-to reproduce-animals
-  if (random-float 1000 < animals-birth-rate) and ((count animals) < max-animals)
-  [
-   hatch-animals 1
-   [
-    set color white
-    setxy xcor ycor 
-   ] 
+      hatch-wolfs 1
+      [
+       set color red
+       set energy energy / 2
+       setxy xcor ycor
+      ]
+      set energy energy / 2
+    ]
+    run ctask
+    set energy energy - 1
+    if energy < 0
+    [
+      die
+    ]
   ]
 end
 
 to hunt
-  let prey one-of other animals-here
-  ifelse prey != nobody
+  let food one-of other cows in-radius 1 with [enfant? = true]
+  if food != nobody
   [
-    ask prey [ die ]
-    set color red
-    set ctask "back-from-hunt"
+    ask food [ die ]
+    if energy < 100
+    [
+      set energy energy + eating-gain-wolfs
+    ]
+  ]
+  set food one-of cows in-radius 3 with [enfant? = true]
+  ifelse food != nobody
+  [
+    set heading towards food
   ]
   [
-    set prey one-of animals in-radius 10
-    ifelse prey != nobody
+    rt random 50
+    lt random 50
+  ]
+  fd 1
+end
+
+to cows-action
+  ask cows
+  [
+    set lifetime lifetime + 1
+    if lifetime = 200
     [
-      set heading towards prey
+      set enfant? false 
     ]
+    if random-float 1000 < random-birth-cows and energy > 50 and count cows < 1000
     [
-      rt random 50
-      lt random 50
+      set energy energy / 2
+      hatch-cows 1
+      [
+        set lifetime 0
+        set enfant? true
+        set ctask "gather"
+        set color white
+        setxy xcor ycor
+      ]
     ]
-    fd 1
+    run ctask
+    if energy < 20 and not (ctask = "fear")
+    [
+     set ctask "eat" 
+    ]
+    if one-of wolfs in-radius 5 != nobody
+    [
+      set color blue
+      set ctask "fear"
+    ]
+    set energy energy - 1
+    if energy < 0  or lifetime > 500
+    [
+      die
+    ]
   ]
 end
 
-to back-from-hunt
-  ifelse pcolor = brown
+to fear
+  ifelse enfant?
   [
-    set village-energy village-energy + hunt-energy
-    set hunt-total-energy hunt-total-energy + hunt-energy
-    set color pink
-    set ctask "hunt"
-    get-energy-from-village
+    let bad one-of wolfs in-radius 10
+    if bad != nobody
+    [
+      set heading towards bad
+    ]
+    bk 0.5
   ]
   [
-    set heading towardsxy 0 0 
-    fd 1
+    run "gather" 
+  ]
+  set fear-time fear-time + 1
+  if fear-time = 10
+  [
+    set color white
+    set fear-time 0
+    set ctask "gather" 
+  ]
+end
+
+to eat
+  if grass-heigth > 10
+  [
+    set grass-heigth (grass-heigth - 10)
+    set pcolor scale-color green grass-heigth 0 100
+    set energy energy + eating-gain-cows
+  ]
+  rt random 50
+  lt random 50
+  fd 1
+  if energy >= 100
+  [
+   set ctask "gather" 
   ]
 end
 
 to gather
-  ifelse pcolor = green  
+  let mate one-of other cows in-radius 10
+  ifelse mate != nobody
   [
-    set color violet
-    set ctask "back-from-gathering" 
-  ]
-  [
-    set heading towardsxy random 110 random 110
-    fd 1
-  ]
-end
-
-to back-from-gathering
-  ifelse pcolor = brown
-  [
-    set village-energy village-energy + gathering-energy
-    set gathering-total-energy gathering-total-energy + gathering-energy
-    set color blue
-    set ctask "gather"
-    get-energy-from-village
-  ]
-  [
-    set heading towardsxy 0 0 
-    fd 1
-  ]
-end
-
-to reproduce-hunters
-  if (random-float 1000 < hunters-birth-rate) and ((count hunters) < max-hunters) and energy > 50
-  [
-    set energy energy / 2
-    hatch-hunters 1
+    if one-of other cows in-radius 2 = nobody
     [
-      set energy energy
-      setxy xcor ycor
-      ifelse ctask = "hunt" or ctask = "back-from-hunt"
+      set heading towards mate
+      fd 1
+    ]
+  ]
+  [
+   lt random 50
+   rt random 50 
+   fd 1
+  ]
+end
+
+to grow-grass
+  ask patches
+    [
+    ifelse pcolor = black 
       [
-        set ctask "hunt" 
-        set color pink
+        if random-float 1000 < grass-grow-rate
+        [ set pcolor [0 10 0] ]
       ]
       [
-        set ctask "gather"
-        set color blue
+        ifelse grass-heigth < 50 and grow < grass-grow-interval
+        [
+          set grass-heigth (grass-heigth + 1)
+          set pcolor scale-color green grass-heigth 0 100
+          set grow 0
+        ]
+        [
+          ifelse grass-heigth < 50
+          [
+           set grow (grow + 1) 
+          ]
+          [
+            set pcolor black 
+            set grass-heigth 0
+            set grow 0
+          ]
+        ]
       ]
     ] 
-  ]
 end
 
-to get-energy-from-village
-  if pcolor = brown
-    [
-      let missing-energy 100 - energy
-      if village-energy - missing-energy > 0
-      [
-        set village-energy village-energy - missing-energy
-        set energy energy + missing-energy
-      ]
-    ]
-end
-
-to change-work
-  if ctask != "back-from-hunt" and ctask != "back-from-gathering"
-  [
-    ifelse village-energy < random 500 + 500
-    [
-      set ctask "gather" 
-      set color blue
-    ]
-    [
-      if village-energy > random 1000 + 1000
-      [
-        set ctask "hunt" 
-        set color pink
-      ]
-    ]
-  ]
+to go
+  grow-grass
+  cows-action
+  wolfs-action
+  tick
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-213
+210
 10
-978
-796
+1730
+1551
 75
 75
-5.0
+10.0
 1
 10
 1
@@ -235,10 +241,10 @@ ticks
 30.0
 
 BUTTON
-2
-15
-97
-55
+9
+10
+83
+43
 Setup
 setup
 NIL
@@ -252,10 +258,10 @@ NIL
 1
 
 BUTTON
-102
-16
-201
-54
+126
+12
+189
+45
 Go
 go
 T
@@ -269,87 +275,76 @@ NIL
 1
 
 SLIDER
-5
-64
-200
-97
-hunters-number
-hunters-number
-0
-500
-31
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-6
-103
-200
-136
-animals-number
-animals-number
-0
-500
+19
+67
+191
 100
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-6
-141
-199
-174
-animals-birth-rate
-animals-birth-rate
+grass-grow-rate
+grass-grow-rate
 0
+1000
 10
-0.8
-0.01
-1
-NIL
-HORIZONTAL
-
-SLIDER
-6
-178
-200
-211
-max-animals
-max-animals
-0
-1000
-1000
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-7
-250
-200
-283
-hunt-energy
-hunt-energy
+19
+107
+192
+140
+grass-grow-interval
+grass-grow-interval
 0
+1000
+1
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+19
+146
+191
+179
+cows-number
+cows-number
+0
+1000
 100
-12
 1
 1
 NIL
 HORIZONTAL
 
+PLOT
+4
+446
+204
+596
+Plot
+NIL
+NIL
+0.0
+10.0
+0.0
+100.0
+true
+false
+"" ""
+PENS
+"cows" 1.0 0 -7500403 true "" "plot count cows"
+"wolfs" 1.0 0 -2674135 true "" "plot count wolfs"
+
 SLIDER
-8
-287
-200
-320
-gathering-energy
-gathering-energy
+18
+227
+190
+260
+wolfs-number
+wolfs-number
 0
 100
 40
@@ -359,131 +354,83 @@ NIL
 HORIZONTAL
 
 SLIDER
--2
-463
-215
-496
-starting-village-energy
-starting-village-energy
-0
-10000
-1040
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-8
-353
-198
-386
-gatherer-rate
-gatherer-rate
+18
+268
+197
+301
+eating-gain-wolfs
+eating-gain-wolfs
 0
 100
-50
+40
 1
-1
-NIL
-HORIZONTAL
-
-MONITOR
-1099
-35
-1164
-80
-Animals
-count animals
-17
-1
-11
-
-SLIDER
-7
-390
-193
-423
-hunters-birth-rate
-hunters-birth-rate
-0
-1
-0.11
-0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
-7
-424
-194
-457
-max-hunters
-max-hunters
+18
+309
+197
+342
+eating-gain-cows
+eating-gain-cows
 0
-1000
-1000
+100
+20
 1
 1
 NIL
 HORIZONTAL
-
-MONITOR
-1012
-33
-1077
-78
-Hunters
-count hunters
-17
-1
-11
-
-MONITOR
-1014
-91
-1165
-136
-Village-energy
-village-energy
-17
-1
-11
 
 SLIDER
 13
-517
-185
-550
-change-work-rate
-change-work-rate
+350
+203
+383
+random-birth-cows
+random-birth-cows
 0
 100
-50
+10
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+10
+399
+200
+432
+random-birth-wolfs
+random-birth-wolfs
+0
+100
+10
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-1018
-154
-1176
-199
-gathering-total-energy
-gathering-total-energy
+24
+627
+180
+672
+NIL
+sum [energy] of cows
 17
 1
 11
 
 MONITOR
-1021
-207
-1176
-252
-hunt-total-energy
-hunt-total-energy
+59
+678
+147
+723
+NIL
+count wolfs
 17
 1
 11
